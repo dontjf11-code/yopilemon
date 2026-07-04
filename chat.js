@@ -20,21 +20,14 @@
   const MODELS = CFG.models;
   const MODEL_BY_ID = Object.fromEntries(MODELS.map((m) => [m.id, m]));
 
-  /* ---- Maker colors (for the model logos) ---- */
-  const MAKER_COLOR = {
-    Anthropic: "#D97706",
-    Zhipu:   "#7C3AED",
-    Moonshot:"#2563EB",
-    MiniMax: "#DB2777",
-    Alibaba: "#EA580C",
-  };
-  const MAKER_INITIAL = {
-    Anthropic: "A",
-    Zhipu: "Z",
-    Moonshot: "M",
-    MiniMax: "X",
-    Alibaba: "Q",
-  };
+  /* ---- Maker colors (for the model logos) ----
+     Sourced from config.js makerMeta so every maker listed there
+     gets the right color + initial. Falls back to a neutral chip. */
+  const MAKER_META = (CFG && CFG.makerMeta) || {};
+  const makerColor = (maker) =>
+    (MAKER_META[maker] && MAKER_META[maker].color) || "#6B6B57";
+  const makerInitial = (maker) =>
+    (MAKER_META[maker] && MAKER_META[maker].initial) || "✦";
 
   /* ---- tiny DOM helpers ---- */
   const $ = (id) => document.getElementById(id);
@@ -161,9 +154,9 @@
         const opt = el("div", "modelopt" + (m.id === currentModel ? " is-selected" : ""));
         opt.setAttribute("role", "option");
         opt.dataset.id = m.id;
-        const color = MAKER_COLOR[m.maker] || "#6B6B57";
+        const color = makerColor(m.maker);
         opt.innerHTML = `
-          <div class="modelopt__logo" style="background:${color}">${MAKER_INITIAL[m.maker] || "✦"}</div>
+          <div class="modelopt__logo" style="background:${color}">${escapeHtml(makerInitial(m.maker))}</div>
           <div class="modelopt__body">
             <div class="modelopt__name">
               ${escapeHtml(m.name)}
@@ -186,10 +179,10 @@
   function renderModelButton() {
     const m = MODEL_BY_ID[currentModel] || MODELS[0];
     $("modelBtnText").textContent = m.name;
-    const color = MAKER_COLOR[m.maker] || "#6B6B57";
+    const color = makerColor(m.maker);
     $("modelLogoMini").replaceWith(
       (() => {
-        const node = el("span", "modelopt__logo modelpicker__logo-mini", MAKER_INITIAL[m.maker] || "✦");
+        const node = el("span", "modelopt__logo modelpicker__logo-mini", makerInitial(m.maker));
         node.style.cssText = `width:22px;height:22px;font-size:11px;border-radius:7px;background:${color}`;
         node.id = "modelLogoMini";
         return node;
@@ -252,8 +245,8 @@
     const m = MODEL_BY_ID[currentModel];
     empty.innerHTML = `
       <div class="chat__empty-emoji">🍋</div>
-      <h2>Squeeze something fresh</h2>
-      <p>You're chatting with <strong>${escapeHtml(m.name)}</strong>. Pick a starter below or ask anything.</p>
+      <h2>What can I squeeze for you?</h2>
+      <p>You're on <strong>${escapeHtml(m.name)}</strong> — free, unlimited, and switchable anytime. Pick a starter or ask anything.</p>
       <div class="chat__suggestions">
         ${SUGGESTIONS.map((s) => `
           <button class="suggestion" type="button" data-prompt="${escapeAttr(s.prompt)}">
@@ -530,10 +523,12 @@
     const btn = $("sendBtn");
     if (on) {
       btn.disabled = false;
+      btn.classList.add("is-stop");
       btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
       btn.setAttribute("aria-label", "Stop");
       btn.onclick = stop;
     } else {
+      btn.classList.remove("is-stop");
       updateSendState();
       btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
       btn.setAttribute("aria-label", "Send message");
@@ -665,9 +660,9 @@
      Suggestions
      ============================================================ */
   const SUGGESTIONS = [
-    { icon: "✍️", text: "Draft a zesty product launch email", prompt: "Draft a short, zesty product launch email for YopiLemon — friendly tone, one headline, three feature bullets, and a CTA." },
+    { icon: "✍️", text: "Write a friendly launch email", prompt: "Draft a short, friendly product launch email — one headline, three feature bullets, and a clear call to action." },
     { icon: "💡", text: "Explain a tricky concept simply", prompt: "Explain how vector embeddings work, simply, with one everyday analogy." },
-    { icon: "🧑‍💻", text: "Refactor this code", prompt: "Here's a function I'd like you to refactor for readability:\n\n```js\nfunction f(a){let r=[];for(let i=0;i<a.length;i++){if(a[i]%2==0){r.push(a[i]*2)}}return r}\n```" },
+    { icon: "🧑‍💻", text: "Refactor this code", prompt: "Refactor this function for readability:\n\n```js\nfunction f(a){let r=[];for(let i=0;i<a.length;i++){if(a[i]%2==0){r.push(a[i]*2)}}return r}\n```" },
     { icon: "🧾", text: "Summarize my notes into bullets", prompt: "Summarize these notes into 5 concise bullets:\n\n- Q3 launch slipped to Aug 14\n- Design needs 2 more days\n- Beta waitlist grew 38% this week\n- Need a kickoff email drafted\n- Engineering wants a release checklist" },
   ];
 
@@ -713,5 +708,13 @@
     input.focus();
   }
 
-  document.addEventListener("DOMContentLoaded", init);
+  // The auth `await` above can resolve after DOMContentLoaded has
+  // already fired (this script lives at the end of <body>), so a plain
+  // addEventListener would miss the event and init() would never run.
+  // Run now if the DOM is ready, otherwise wait for it.
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();
