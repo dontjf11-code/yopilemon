@@ -63,6 +63,10 @@ const SESSION_KEYS = process.env.SESSION_SECRET.split(/,/).filter(Boolean);
 
 const app = express();
 app.disable("x-powered-by");
+// Render (and most PaaS) terminate TLS at a proxy and forward plain
+// HTTP to the app. Trust one hop of X-Forwarded-* so req.protocol,
+// req.secure, and req.ip reflect what the browser actually saw.
+app.set("trust proxy", 1);
 app.use(express.json({ limit: "1mb" }));
 app.use(
   cookieSession({
@@ -204,6 +208,7 @@ app.post("/auth/verify", async (req, res) => {
     const user = toPublicUser(fresh || member);
 
     req.session.user = user;
+    console.log("[YopiLemon] /auth/verify OK — session set for", user.username, "secure?", req.secure, "proto", req.protocol);
     return res.json({ ok: true, user });
   } catch (err) {
     console.error("[YopiLemon] verify error:", err.message);
@@ -217,7 +222,9 @@ app.post("/auth/logout", (req, res) => {
 });
 
 app.get("/api/me", (req, res) => {
-  if (!req.session || !req.session.user) return res.status(401).json({ error: "Not authenticated" });
+  const hasSession = !!req.session && !!req.session.user;
+  console.log("[YopiLemon] /api/me — hasSession:", hasSession, "secure?", req.secure, "cookies?", !!req.headers.cookie);
+  if (!hasSession) return res.status(401).json({ error: "Not authenticated" });
   res.json({ user: req.session.user });
 });
 
