@@ -1,0 +1,717 @@
+/* ============================================================
+   YopiLemon — chat
+   Streaming chat against the same-origin /api/chat proxy (which
+   forwards to the upstream AI endpoint with the secret key), with
+   a model picker and per-user conversation history persisted in
+   localStorage. Auth is Discord, server-backed; the user object
+   comes from /api/me.
+   ============================================================ */
+(async function () {
+  "use strict";
+
+  /* ---- Auth gate (async — backed by /api/me) ---- */
+  const user = window.Auth ? await Auth.current() : null;
+  if (!user) {
+    location.replace("login.html");
+    return;
+  }
+
+  const CFG = window.YOPIL_CONFIG;
+  const MODELS = CFG.models;
+  const MODEL_BY_ID = Object.fromEntries(MODELS.map((m) => [m.id, m]));
+
+  /* ---- Maker colors (for the model logos) ---- */
+  const MAKER_COLOR = {
+    Anthropic: "#D97706",
+    Zhipu:   "#7C3AED",
+    Moonshot:"#2563EB",
+    MiniMax: "#DB2777",
+    Alibaba: "#EA580C",
+  };
+  const MAKER_INITIAL = {
+    Anthropic: "A",
+    Zhipu: "Z",
+    Moonshot: "M",
+    MiniMax: "X",
+    Alibaba: "Q",
+  };
+
+  /* ---- tiny DOM helpers ---- */
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  };
+
+  /* ---- state ---- */
+  let conversations = {};      // { [id]: { id, title, model, createdAt, updatedAt, messages: [] } }
+  let activeId = null;
+  let currentModel = CFG.defaultModel;
+  let isStreaming = false;
+  let abortCtrl = null;
+
+  /* ---- persistence (keyed by Discord user id) ---- */
+  const userKey = () => `${CFG.storage.chats}:${user.id}`;
+  const loadConversations = () => {
+    try {
+      conversations = JSON.parse(localStorage.getItem(userKey()) || "{}") || {};
+    } catch { conversations = {}; }
+  };
+  const saveConversations = () => {
+    localStorage.setItem(userKey(), JSON.stringify(conversations));
+  };
+
+  /* ---- model preference (global, not per-user) ---- */
+  const loadModel = () => {
+    const saved = localStorage.getItem(CFG.storage.model);
+    if (saved && MODEL_BY_ID[saved]) currentModel = saved;
+  };
+  const saveModel = (id) => localStorage.setItem(CFG.storage.model, id);
+
+  /* ============================================================
+     Render: sidebar (conversations + user foot)
+     ============================================================ */
+  function renderSidebar() {
+    // User foot — Discord avatar (or initial) + username
+    const initial = (user.name || user.username || "?")[0].toUpperCase();
+    const avatarHtml = user.avatar
+      ? `<img class="nav__avatar nav__avatar-img" src="${escapeAttr(user.avatar)}" alt="" />`
+      : `<span class="nav__avatar" aria-hidden="true">${escapeHtml(initial)}</span>`;
+    $("sidebarFoot").innerHTML = `
+      ${avatarHtml}
+      <span>
+        <span class="chat__user-name">${escapeHtml(user.name || user.username)}</span>
+        <span class="chat__user-email">${escapeHtml(user.username ? "@" + user.username : "")}</span>
+      </span>
+      <button class="chat__logout" id="logoutBtn" type="button">Log out</button>
+    `;
+    $("logoutBtn").addEventListener("click", async () => {
+      await Auth.logout();
+      location.href = "login.html";
+    });
+
+    // Conversation list (most recent first)
+    const list = $("convoList");
+    list.innerHTML = "";
+    const sorted = Object.values(conversations).sort(
+      (a, b) => b.updatedAt - a.updatedAt
+    );
+    if (!sorted.length) {
+      const empty = el("div", "convo");
+      empty.style.color = "var(--ink-300)";
+      empty.style.fontSize = "13px";
+      empty.style.padding = "8px 10px";
+      empty.textContent = "No chats yet — start one!";
+      list.appendChild(empty);
+      return;
+    }
+    for (const c of sorted) {
+      const row = el("div", "convo" + (c.id === activeId ? " is-active" : ""));
+      row.dataset.id = c.id;
+      row.innerHTML = `
+        <span class="convo__icon">💬</span>
+        <span class="convo__title">${escapeHtml(c.title || "New chat")}</span>
+        <button class="convo__del" aria-label="Delete chat" title="Delete">✕</button>
+      `;
+      row.addEventListener("click", (e) => {
+        if (e.target.closest(".convo__del")) return;
+        openConversation(c.id);
+      });
+      row.querySelector(".convo__del").addEventListener("click", (e) => {
+        e.stopPropagation();
+        deleteConversation(c.id);
+      });
+      list.appendChild(row);
+    }
+  }
+
+  function deleteConversation(id) {
+    delete conversations[id];
+    if (activeId === id) {
+      activeId = null;
+      renderMessages();
+      renderSidebar();
+    } else {
+      renderSidebar();
+    }
+    saveConversations();
+  }
+
+  /* ============================================================
+     Render: model picker
+     ============================================================ */
+  const TIER_LABEL = {
+    flagship: "Flagships",
+    balanced: "Balanced",
+    fast: "Fast",
+    specialist: "Specialists",
+  };
+  const TIER_ORDER = ["flagship", "balanced", "fast", "specialist"];
+
+  function renderModelMenu() {
+    const menu = $("modelMenu");
+    menu.innerHTML = "";
+    for (const tier of TIER_ORDER) {
+      const items = MODELS.filter((m) => m.tier === tier);
+      if (!items.length) continue;
+      menu.appendChild(el("div", "modelpicker__group", TIER_LABEL[tier]));
+      for (const m of items) {
+        const opt = el("div", "modelopt" + (m.id === currentModel ? " is-selected" : ""));
+        opt.setAttribute("role", "option");
+        opt.dataset.id = m.id;
+        const color = MAKER_COLOR[m.maker] || "#6B6B57";
+        opt.innerHTML = `
+          <div class="modelopt__logo" style="background:${color}">${MAKER_INITIAL[m.maker] || "✦"}</div>
+          <div class="modelopt__body">
+            <div class="modelopt__name">
+              ${escapeHtml(m.name)}
+              ${m.badge ? `<span class="modelpicker__badge">${escapeHtml(m.badge)}</span>` : ""}
+              <span class="modelopt__maker">${escapeHtml(m.maker)}</span>
+            </div>
+            <div class="modelopt__blurb">${escapeHtml(m.blurb)}</div>
+          </div>
+          <svg class="modelopt__check" width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        `;
+        opt.addEventListener("click", () => {
+          selectModel(m.id);
+          closeModelMenu();
+        });
+        menu.appendChild(opt);
+      }
+    }
+  }
+
+  function renderModelButton() {
+    const m = MODEL_BY_ID[currentModel] || MODELS[0];
+    $("modelBtnText").textContent = m.name;
+    const color = MAKER_COLOR[m.maker] || "#6B6B57";
+    $("modelLogoMini").replaceWith(
+      (() => {
+        const node = el("span", "modelopt__logo modelpicker__logo-mini", MAKER_INITIAL[m.maker] || "✦");
+        node.style.cssText = `width:22px;height:22px;font-size:11px;border-radius:7px;background:${color}`;
+        node.id = "modelLogoMini";
+        return node;
+      })()
+    );
+    const badge = $("modelBtnBadge");
+    if (m.badge) {
+      badge.textContent = m.badge;
+      badge.hidden = false;
+    } else {
+      badge.hidden = true;
+    }
+  }
+
+  function selectModel(id) {
+    if (!MODEL_BY_ID[id] || id === currentModel) return;
+    currentModel = id;
+    saveModel(id);
+    renderModelButton();
+    renderModelMenu();
+    // Persist the active conversation's model
+    if (activeId && conversations[activeId]) {
+      conversations[activeId].model = id;
+      saveConversations();
+    }
+  }
+
+  function openModelMenu() {
+    $("modelpicker").classList.add("is-open");
+    $("modelBtn").setAttribute("aria-expanded", "true");
+  }
+  function closeModelMenu() {
+    $("modelpicker").classList.remove("is-open");
+    $("modelBtn").setAttribute("aria-expanded", "false");
+  }
+
+  /* ============================================================
+     Render: messages
+     ============================================================ */
+  function renderMessages() {
+    const wrap = $("messages");
+    wrap.innerHTML = "";
+    const c = activeId ? conversations[activeId] : null;
+
+    if (!c || !c.messages.length) {
+      renderEmptyState(wrap);
+      $("chatTitle").textContent = "New chat";
+      return;
+    }
+
+    $("chatTitle").textContent = c.title || "New chat";
+    for (const m of c.messages) {
+      wrap.appendChild(buildMessageNode(m));
+    }
+    scrollToBottom();
+  }
+
+  function renderEmptyState(wrap) {
+    const empty = el("div", "chat__empty");
+    const m = MODEL_BY_ID[currentModel];
+    empty.innerHTML = `
+      <div class="chat__empty-emoji">🍋</div>
+      <h2>Squeeze something fresh</h2>
+      <p>You're chatting with <strong>${escapeHtml(m.name)}</strong>. Pick a starter below or ask anything.</p>
+      <div class="chat__suggestions">
+        ${SUGGESTIONS.map((s) => `
+          <button class="suggestion" type="button" data-prompt="${escapeAttr(s.prompt)}">
+            <div class="suggestion__icon">${s.icon}</div>
+            <div class="suggestion__text">${escapeHtml(s.text)}</div>
+          </button>
+        `).join("")}
+      </div>
+    `;
+    wrap.appendChild(empty);
+    empty.querySelectorAll(".suggestion").forEach((b) =>
+      b.addEventListener("click", () => {
+        $("chatInput").value = b.dataset.prompt;
+        autoGrow($("chatInput"));
+        updateSendState();
+        send();
+      })
+    );
+  }
+
+  function buildMessageNode(m) {
+    const node = el("div", "msg msg--" + m.role);
+    const initial = (user.name || user.username || "?")[0].toUpperCase();
+    let avatar;
+    if (m.role === "user" && user.avatar) {
+      avatar = el("img", "msg__avatar msg__avatar-img");
+      avatar.src = user.avatar;
+      avatar.alt = "";
+    } else {
+      avatar = el("div", "msg__avatar", m.role === "user" ? initial : "✦");
+    }
+    const body = el("div", "msg__body");
+
+    const meta = el("div", "msg__meta");
+    meta.appendChild(
+      el("span", "msg__name", m.role === "user" ? (user.name || user.username || "You") : "YopiLemon")
+    );
+    if (m.role === "ai" && m.model) {
+      const mm = MODEL_BY_ID[m.model];
+      meta.appendChild(el("span", "msg__model", mm ? mm.name : m.model));
+    }
+    body.appendChild(meta);
+
+    const content = el("div", "msg__content");
+    content.dataset.raw = m.content || "";
+    if (m.role === "ai") {
+      content.innerHTML = renderMarkdown(m.content || "");
+    } else {
+      content.textContent = m.content || "";
+    }
+    body.appendChild(content);
+
+    // Actions (copy / regenerate)
+    if (m.role === "ai") {
+      const actions = el("div", "msg__actions");
+      actions.appendChild(makeAction("Copy", () => copyText(m.content)));
+      actions.appendChild(makeAction("Regenerate", () => regenerate(m)));
+      body.appendChild(actions);
+    } else {
+      const actions = el("div", "msg__actions");
+      actions.appendChild(makeAction("Copy", () => copyText(m.content)));
+      actions.appendChild(makeAction("Edit", () => editUserMessage(m)));
+      body.appendChild(actions);
+    }
+
+    node.appendChild(avatar);
+    node.appendChild(body);
+    return node;
+  }
+
+  function makeAction(label, onClick) {
+    const b = el("button", "msg__action", label);
+    b.type = "button";
+    b.addEventListener("click", onClick);
+    return b;
+  }
+
+  function scrollToBottom() {
+    const s = $("chatScroll");
+    requestAnimationFrame(() => { s.scrollTop = s.scrollHeight; });
+  }
+
+  /* ============================================================
+     Conversation management
+     ============================================================ */
+  function newConversation() {
+    activeId = null;
+    renderMessages();
+    renderSidebar();
+    $("chatInput").focus();
+    closeSidebarMobile();
+  }
+
+  function openConversation(id) {
+    if (!conversations[id]) return;
+    activeId = id;
+    const c = conversations[id];
+    if (c.model && MODEL_BY_ID[c.model]) {
+      currentModel = c.model;
+      renderModelButton();
+      renderModelMenu();
+    }
+    renderMessages();
+    renderSidebar();
+    closeSidebarMobile();
+    $("chatInput").focus();
+  }
+
+  function ensureConversation(firstUserText) {
+    if (activeId && conversations[activeId]) return conversations[activeId];
+    const id = "c_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const c = {
+      id,
+      title: deriveTitle(firstUserText),
+      model: currentModel,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      messages: [],
+    };
+    conversations[id] = c;
+    activeId = id;
+    return c;
+  }
+
+  function deriveTitle(text) {
+    const clean = (text || "").trim().replace(/\s+/g, " ");
+    if (!clean) return "New chat";
+    return clean.length > 40 ? clean.slice(0, 40) + "…" : clean;
+  }
+
+  /* ============================================================
+     Send / stream
+     ============================================================ */
+  async function send() {
+    if (isStreaming) return;
+    const input = $("chatInput");
+    const text = input.value.trim();
+    if (!text) return;
+
+    const c = ensureConversation(text);
+    c.model = currentModel;
+    c.messages.push({ role: "user", content: text, at: Date.now() });
+    c.updatedAt = Date.now();
+
+    input.value = "";
+    autoGrow(input);
+    updateSendState();
+    renderMessages();
+    renderSidebar();
+    saveConversations();
+
+    // Build the AI placeholder node (streaming target)
+    const aiMsg = { role: "ai", content: "", model: currentModel, at: Date.now() };
+    c.messages.push(aiMsg);
+    const node = buildMessageNode(aiMsg);
+    $("messages").appendChild(node);
+    const contentEl = node.querySelector(".msg__content");
+    contentEl.classList.add("msg__cursor");
+    scrollToBottom();
+
+    setStreaming(true);
+    abortCtrl = new AbortController();
+
+    try {
+      const full = await streamCompletion({
+        model: currentModel,
+        messages: c.messages
+          .filter((m) => m !== aiMsg)
+          .map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content })),
+        signal: abortCtrl.signal,
+        onDelta: (delta) => {
+          aiMsg.content += delta;
+          contentEl.innerHTML = renderMarkdown(aiMsg.content);
+          scrollToBottom();
+        },
+      });
+
+      aiMsg.content = full || aiMsg.content;
+      contentEl.classList.remove("msg__cursor");
+      contentEl.innerHTML = renderMarkdown(aiMsg.content);
+      c.updatedAt = Date.now();
+      saveConversations();
+      renderSidebar();
+    } catch (err) {
+      contentEl.classList.remove("msg__cursor");
+      if (err.name === "AbortError") {
+        aiMsg.content += "\n\n_(stopped)_";
+      } else {
+        aiMsg.content += `\n\n⚠️ **Error:** ${err.message}`;
+      }
+      contentEl.innerHTML = renderMarkdown(aiMsg.content);
+      saveConversations();
+    } finally {
+      setStreaming(false);
+      abortCtrl = null;
+    }
+  }
+
+  async function regenerate(aiMsg) {
+    if (isStreaming) return;
+    const c = conversations[activeId];
+    if (!c) return;
+    const idx = c.messages.indexOf(aiMsg);
+    if (idx < 0) return;
+
+    // Drop this AI message and re-run from the prior user message
+    c.messages.splice(idx, 1);
+    // If the regen request named a model, keep using currentModel; else current
+    aiMsg.content = "";
+    aiMsg.model = currentModel;
+    c.messages.push(aiMsg);
+    renderMessages();
+    saveConversations();
+
+    const node = [...$("messages").children].pop();
+    const contentEl = node.querySelector(".msg__content");
+    contentEl.classList.add("msg__cursor");
+
+    setStreaming(true);
+    abortCtrl = new AbortController();
+    try {
+      const full = await streamCompletion({
+        model: currentModel,
+        messages: c.messages
+          .filter((m) => m !== aiMsg)
+          .map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content })),
+        signal: abortCtrl.signal,
+        onDelta: (delta) => {
+          aiMsg.content += delta;
+          contentEl.innerHTML = renderMarkdown(aiMsg.content);
+          scrollToBottom();
+        },
+      });
+      aiMsg.content = full || aiMsg.content;
+      contentEl.classList.remove("msg__cursor");
+      contentEl.innerHTML = renderMarkdown(aiMsg.content);
+      c.updatedAt = Date.now();
+      saveConversations();
+    } catch (err) {
+      contentEl.classList.remove("msg__cursor");
+      aiMsg.content += err.name === "AbortError" ? "\n\n_(stopped)_" : `\n\n⚠️ **Error:** ${err.message}`;
+      contentEl.innerHTML = renderMarkdown(aiMsg.content);
+      saveConversations();
+    } finally {
+      setStreaming(false);
+      abortCtrl = null;
+    }
+  }
+
+  function editUserMessage(userMsg) {
+    const input = $("chatInput");
+    input.value = userMsg.content;
+    autoGrow(input);
+    input.focus();
+    // Remove this user message (and any AI reply after it) on send
+    const c = conversations[activeId];
+    if (!c) return;
+    const idx = c.messages.indexOf(userMsg);
+    if (idx < 0) return;
+    // Truncate everything from this user message onward; sending will re-append
+    c.messages = c.messages.slice(0, idx);
+    saveConversations();
+    renderMessages();
+    renderSidebar();
+    updateSendState();
+  }
+
+  function stop() {
+    if (abortCtrl) abortCtrl.abort();
+  }
+
+  function setStreaming(on) {
+    isStreaming = on;
+    const btn = $("sendBtn");
+    if (on) {
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>`;
+      btn.setAttribute("aria-label", "Stop");
+      btn.onclick = stop;
+    } else {
+      updateSendState();
+      btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      btn.setAttribute("aria-label", "Send message");
+      btn.onclick = send;
+    }
+  }
+
+  /* ============================================================
+     API call — same-origin /api/chat proxy (no key in the browser)
+     The server forwards to the upstream OpenAI-compatible endpoint
+     with the secret API key and pipes the SSE stream back to us.
+     ============================================================ */
+  async function streamCompletion({ model, messages, signal, onDelta }) {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      signal,
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages }),
+    });
+
+    if (!res.ok || !res.body) {
+      let detail = "";
+      try {
+        const errJson = await res.json();
+        detail = errJson?.error || JSON.stringify(errJson);
+      } catch {
+        try { detail = await res.text(); } catch { detail = ""; }
+      }
+      if (res.status === 401) {
+        // Session expired — bounce to login.
+        location.replace("login.html");
+      }
+      throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ""}`);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let full = "";
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE chunks are split by blank lines
+      const lines = buffer.split("\n");
+      buffer = lines.pop(); // keep the last (possibly partial) line
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(":")) continue; // comment/keepalive
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") return full;
+        try {
+          const json = JSON.parse(payload);
+          const delta = json?.choices?.[0]?.delta?.content || "";
+          if (delta) {
+            full += delta;
+            onDelta(delta);
+          }
+        } catch {
+          // ignore malformed partial JSON
+        }
+      }
+    }
+    return full;
+  }
+
+  /* ============================================================
+     Composer behavior
+     ============================================================ */
+  function autoGrow(textarea) {
+    textarea.style.height = "auto";
+    textarea.style.height = Math.min(textarea.scrollHeight, 180) + "px";
+  }
+  function updateSendState() {
+    const has = $("chatInput").value.trim().length > 0;
+    $("sendBtn").disabled = !has || isStreaming;
+  }
+
+  /* ============================================================
+     Mobile sidebar
+     ============================================================ */
+  function openSidebarMobile() {
+    $("sidebar").classList.add("is-open");
+    $("scrim").classList.add("is-open");
+  }
+  function closeSidebarMobile() {
+    $("sidebar").classList.remove("is-open");
+    $("scrim").classList.remove("is-open");
+  }
+
+  /* ============================================================
+     Utilities
+     ============================================================ */
+  function escapeHtml(s) {
+    return (s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+  function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
+
+  function renderMarkdown(text) {
+    if (window.marked && marked.parse) {
+      try {
+        // marked v12: parse inline config; sanitize via DOMPurify if present
+        const html = marked.parse(text, { breaks: true });
+        if (window.DOMPurify) return DOMPurify.sanitize(html);
+        return html;
+      } catch {
+        return escapeHtml(text).replace(/\n/g, "<br>");
+      }
+    }
+    return escapeHtml(text).replace(/\n/g, "<br>");
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text || "");
+    } catch {
+      /* clipboard blocked — silently ignore */
+    }
+  }
+
+  /* ============================================================
+     Suggestions
+     ============================================================ */
+  const SUGGESTIONS = [
+    { icon: "✍️", text: "Draft a zesty product launch email", prompt: "Draft a short, zesty product launch email for YopiLemon — friendly tone, one headline, three feature bullets, and a CTA." },
+    { icon: "💡", text: "Explain a tricky concept simply", prompt: "Explain how vector embeddings work, simply, with one everyday analogy." },
+    { icon: "🧑‍💻", text: "Refactor this code", prompt: "Here's a function I'd like you to refactor for readability:\n\n```js\nfunction f(a){let r=[];for(let i=0;i<a.length;i++){if(a[i]%2==0){r.push(a[i]*2)}}return r}\n```" },
+    { icon: "🧾", text: "Summarize my notes into bullets", prompt: "Summarize these notes into 5 concise bullets:\n\n- Q3 launch slipped to Aug 14\n- Design needs 2 more days\n- Beta waitlist grew 38% this week\n- Need a kickoff email drafted\n- Engineering wants a release checklist" },
+  ];
+
+  /* ============================================================
+     Wire up events
+     ============================================================ */
+  function init() {
+    loadConversations();
+    loadModel();
+    renderModelButton();
+    renderModelMenu();
+    renderSidebar();
+    renderMessages();
+
+    // Composer
+    const input = $("chatInput");
+    input.addEventListener("input", () => { autoGrow(input); updateSendState(); });
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        send();
+      }
+    });
+    $("sendBtn").onclick = send;
+
+    // New chat
+    $("newChatBtn").addEventListener("click", newConversation);
+
+    // Model picker
+    $("modelBtn").addEventListener("click", (e) => {
+      e.stopPropagation();
+      $("modelpicker").classList.contains("is-open") ? closeModelMenu() : openModelMenu();
+    });
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest("#modelpicker")) closeModelMenu();
+    });
+
+    // Mobile sidebar
+    $("menuToggle").addEventListener("click", openSidebarMobile);
+    $("scrim").addEventListener("click", closeSidebarMobile);
+
+    // Focus the composer
+    input.focus();
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();

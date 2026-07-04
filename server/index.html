@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="YopiLemon — premium AI models, completely free. Chat with Claude, OpenAI, and other leading models with unlimited messages. Created by yopix." />
+  <title>YopiLemon — Premium AI Models, Completely Free</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="app.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍋</text></svg>" />
+</head>
+<body>
+  <!-- Nav -->
+  <header class="nav" id="nav">
+    <div class="container nav__inner">
+      <a class="brand" href="#top" aria-label="YopiLemon home">
+        <span class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 48 48" width="34" height="34" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="22" cy="26" rx="16" ry="13" transform="rotate(-28 22 26)" fill="#FBC02D"/>
+            <ellipse cx="22" cy="26" rx="16" ry="13" transform="rotate(-28 22 26)" stroke="#F59E0B" stroke-width="2"/>
+            <path d="M30 10c3-2 7-2 9 0-2 1-3 3-3 5" stroke="#2E7D32" stroke-width="2.5" stroke-linecap="round" fill="#43A047"/>
+            <ellipse cx="17" cy="22" rx="4" ry="2.4" transform="rotate(-28 17 22)" fill="#FFF59D" opacity=".8"/>
+          </svg>
+        </span>
+        <span class="brand__name">Yopi<span class="brand__dot">Lemon</span></span>
+      </a>
+
+      <nav class="nav__links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#stats">Results</a>
+        <a href="#cta">Pricing</a>
+        <a href="chat.html">Chat</a>
+      </nav>
+
+      <div class="nav__actions" data-auth-slot>
+        <a href="login.html" class="btn btn--ghost">Sign in</a>
+        <a href="login.html?mode=signup" class="btn btn--primary">Start free</a>
+      </div>
+
+      <button class="nav__toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Mobile menu -->
+  <div class="mobile-menu" id="mobileMenu" aria-hidden="true">
+    <a href="#features">Features</a>
+    <a href="#how">How it works</a>
+    <a href="#stats">Results</a>
+    <a href="#cta">Pricing</a>
+    <a href="chat.html" class="btn btn--ghost">Chat</a>
+    <a href="login.html?mode=signup" class="btn btn--primary">Start free</a>
+  </div>
+
+  <main id="top">
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero__glow" aria-hidden="true"></div>
+      <div class="container hero__inner">
+        <div class="hero__copy">
+          <span class="eyebrow"><span class="eyebrow__dot"></span> 100% free — no upsell</span>
+          <h1 class="hero__title">
+            Premium AI models,<br />
+            <span class="hero__title-accent">completely free.</span>
+          </h1>
+          <p class="hero__lead">
+            Chat with Claude, OpenAI, and other leading models in one clean,
+            fast place. Unlimited messages, no credit card, no trial that
+            expires. YopiLemon just gives you the good stuff.
+          </p>
+          <div class="hero__cta">
+            <a href="login.html?mode=signup" class="btn btn--primary btn--lg">
+              Start chatting free
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </a>
+            <a href="#features" class="btn btn--ghost btn--lg">See the models</a>
+          </div>
+          <ul class="hero__trust">
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#2E7D32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg> No credit card</li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#2E7D32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Unlimited messages</li>
+            <li><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M20 6L9 17l-5-5" stroke="#2E7D32" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg> Free forever</li>
+          </ul>
+        </div>
+
+        <div class="hero__visual" aria-hidden="true">
+          <div class="card card--float">
+            <div class="card__head">
+              <span class="card__tag">yopilemon</span>
+              <span class="card__dots"><i></i><i></i><i></i></span>
+            </div>
+            <div class="card__body">
+              <div class="bubble bubble--user">Which model should I use for hard reasoning?</div>
+              <div class="bubble bubble--ai">
+                <span class="bubble__spark">✦</span>
+                <span>Claude Fable 5 for the toughest problems — and yes, it’s free here.</span>
+              </div>
+              <div class="bubble bubble--user">Unlimited messages, really?</div>
+              <div class="bubble bubble--ai bubble--typing">
+                <span class="bubble__spark">✦</span>
+                <span class="typing"><i></i><i></i><i></i></span>
+              </div>
+            </div>
+          </div>
+          <div class="sticker sticker--lemon">🍋</div>
+          <div class="sticker sticker--leaf">🌿</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="section features" id="features">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow"><span class="eyebrow__dot"></span> Features</span>
+          <h2 class="section__title">Everything you need, nothing you don’t.</h2>
+          <p class="section__sub">A handful of sharp, well-squeezed features — built to feel light and taste bright.</p>
+        </div>
+
+        <div class="features__grid">
+          <article class="feature">
+            <div class="feature__icon">⚡</div>
+            <h3>Instant zest</h3>
+            <p>Answers in under a second. YopiLemon streams responses as it thinks, so you’re never staring at a blank rind.</p>
+          </article>
+          <article class="feature">
+            <div class="feature__icon">🧠</div>
+            <h3>Real flagship models</h3>
+            <p>Claude Fable 5, GPT-4o, o1, Gemini 2.5 Pro and more — the same frontier models the big labs charge for, all here for free.</p>
+          </article>
+          <article class="feature">
+            <div class="feature__icon">🔒</div>
+            <h3>Private by design</h3>
+            <p>Your data stays yours. End-to-end encryption and zero training on your content — never a bitter aftertaste.</p>
+          </article>
+          <article class="feature">
+            <div class="feature__icon">♾️</div>
+            <h3>Unlimited messages</h3>
+            <p>No quota, no meter, no “you’ve hit your limit” wall. Ask as much as you want, every day, forever.</p>
+          </article>
+          <article class="feature">
+            <div class="feature__icon">✨</div>
+            <h3>Clean output</h3>
+            <p>Structured, scannable, and ready to paste. No rambling, no filler — just the good stuff.</p>
+          </article>
+          <article class="feature">
+            <div class="feature__icon">🔀</div>
+            <h3>Switch on the fly</h3>
+            <p>One conversation, any model. Hop between makers mid-chat to compare answers without losing your thread.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="section how" id="how">
+      <div class="container">
+        <div class="section__head">
+          <span class="eyebrow"><span class="eyebrow__dot"></span> How it works</span>
+          <h2 class="section__title">Three squeezes to done.</h2>
+          <p class="section__sub">From raw idea to polished result in less time than it takes to make lemonade.</p>
+        </div>
+
+        <ol class="steps">
+          <li class="step">
+            <span class="step__num">01</span>
+            <h3>Pick a model</h3>
+            <p>Choose any flagship you like — Claude, OpenAI, Google, and more — straight from the picker. Change it whenever.</p>
+          </li>
+          <li class="step">
+            <span class="step__num">02</span>
+            <h3>Ask in plain words</h3>
+            <p>Type your question the way you’d ask a colleague. YopiLemon understands intent, not just keywords.</p>
+          </li>
+          <li class="step">
+            <span class="step__num">03</span>
+            <h3>Get zesty answers</h3>
+            <p>Receive clean, ready-to-use output. Refine with a follow-up, switch models to compare, and keep going — no meter running.</p>
+          </li>
+        </ol>
+      </div>
+    </section>
+
+    <!-- Stats -->
+    <section class="stats" id="stats">
+      <div class="container stats__inner">
+        <div class="stat">
+          <span class="stat__num" data-count="120">0</span><span class="stat__suffix">k+</span>
+          <span class="stat__label"> Cups served daily</span>
+        </div>
+        <div class="stat">
+          <span class="stat__num" data-count="98">0</span><span class="stat__suffix">%</span>
+          <span class="stat__label"> Citrus-fresh accuracy</span>
+        </div>
+        <div class="stat">
+          <span class="stat__num" data-count="0.4" data-decimals="1">0</span><span class="stat__suffix">s</span>
+          <span class="stat__label"> Median first token</span>
+        </div>
+        <div class="stat">
+          <span class="stat__num" data-count="16">0</span><span class="stat__suffix">+</span>
+          <span class="stat__label"> Frontier models</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA / Pricing -->
+    <section class="section cta" id="cta">
+      <div class="container cta__card">
+        <div class="cta__copy">
+          <span class="eyebrow eyebrow--light"><span class="eyebrow__dot"></span> Pricing</span>
+          <h2 class="cta__title">One tier. Zero dollars. No catch.</h2>
+          <p class="cta__sub">There’s no paid plan to upsell you into. The free version is the whole thing — every model, unlimited messages, forever.</p>
+
+          <div class="plans plans--single">
+            <div class="plan plan--featured">
+              <span class="plan__badge">The only plan</span>
+              <h3>Free</h3>
+              <div class="plan__price"><span>$0</span><small>/forever</small></div>
+              <ul>
+                <li>Unlimited messages, every day</li>
+                <li>Claude, OpenAI, Google &amp; 16+ more frontier models</li>
+                <li>Switch models mid-conversation</li>
+                <li>No credit card, no trial, no meter</li>
+              </ul>
+              <a href="login.html?mode=signup" class="btn btn--primary btn--block">Start chatting free</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container footer__inner">
+      <div class="footer__brand">
+        <a class="brand" href="#top">
+          <span class="brand__mark" aria-hidden="true">🍋</span>
+          <span class="brand__name">Yopi<span class="brand__dot">Lemon</span></span>
+        </a>
+        <p>Fresh intelligence, squeezed daily. Created by yopix, made with zest in a sunny corner of the internet.</p>
+      </div>
+      <div class="footer__cols">
+        <div>
+          <h4>Product</h4>
+          <a href="#features">Features</a>
+          <a href="#how">How it works</a>
+          <a href="#cta">Pricing</a>
+          <a href="#">Changelog</a>
+        </div>
+        <div>
+          <h4>Company</h4>
+          <a href="#">About</a>
+          <a href="#">Careers</a>
+          <a href="#">Press kit</a>
+          <a href="#">Contact</a>
+        </div>
+        <div>
+          <h4>Legal</h4>
+          <a href="#">Privacy</a>
+          <a href="#">Terms</a>
+          <a href="#">Security</a>
+          <a href="#">DPA</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer__bottom">
+      <span>© <span id="year"></span> yopix. All rights reserved.</span>
+      <span class="footer__tagline">When life gives you data, make YopiLemon.</span>
+    </div>
+  </footer>
+
+  <script src="config.js"></script>
+  <script src="auth.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

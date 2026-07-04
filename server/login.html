@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — YopiLemon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="app.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍋</text></svg>" />
+</head>
+<body>
+  <main class="auth">
+    <!-- Left pitch panel -->
+    <aside class="auth__aside">
+      <a class="brand" href="index.html" aria-label="YopiLemon home">
+        <span class="brand__mark" aria-hidden="true">🍋</span>
+        <span class="brand__name">Yopi<span class="brand__dot">Lemon</span></span>
+      </a>
+      <div class="auth__pitch">
+        <span class="eyebrow"><span class="eyebrow__dot"></span> Welcome to the grove</span>
+        <h2>Squeeze smarter answers out of every conversation.</h2>
+        <p>Pick from 8 fresh models — Fable 5, Opus 4.8, GLM 5.2, and more — all in one zesty chat. Sign in through our Discord to get started.</p>
+        <div class="auth__pills">
+          <span>✦ Claude Fable 5</span>
+          <span>✦ Claude Opus 4.8</span>
+          <span>✦ GLM 5.2</span>
+          <span>✦ Kimi K2.7 Code</span>
+          <span>✦ Qwen 3.7 Plus</span>
+        </div>
+      </div>
+      <div class="auth__lemon" aria-hidden="true">🍋</div>
+    </aside>
+
+    <!-- Right login panel -->
+    <section class="auth__main">
+      <div class="auth__card">
+        <a href="index.html" class="auth__back">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Back to home
+        </a>
+
+        <!-- Step indicator -->
+        <ol class="steps-indicator" id="stepIndicator">
+          <li class="is-active"><span>1</span> Join</li>
+          <li><span>2</span> Username</li>
+          <li><span>3</span> Code</li>
+        </ol>
+
+        <div class="auth__error" id="authError" role="alert"></div>
+
+        <!-- Step 1: Join -->
+        <div class="auth__step" id="stepJoin">
+          <div class="auth__heading">
+            <h1>Join Our Discord</h1>
+            <p>YopiLemon is gated to our Discord server. Open the invite in a new tab, join, then come back here.</p>
+          </div>
+
+          <a class="btn discord-btn" id="joinBtn" href="https://discord.gg/yopixita" target="_blank" rel="noopener noreferrer">
+            <svg class="discord-btn__icon" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M20.317 4.369A19.79 19.79 0 0 0 16.558 3.2a.07.07 0 0 0-.073.035c-.21.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.6 12.6 0 0 0-.617-1.249.07.07 0 0 0-.073-.035 19.74 19.74 0 0 0-3.76 1.169.06.06 0 0 0-.03.025C2.211 7.579 1.45 10.7 1.49 13.78a.08.08 0 0 0 .031.054 19.9 19.9 0 0 0 5.993 3.03.07.07 0 0 0 .076-.027c.462-.63.874-1.295 1.226-1.994a.07.07 0 0 0-.038-.097 13.1 13.1 0 0 1-1.872-.892.07.07 0 0 1-.007-.117c.126-.094.252-.192.372-.291a.07.07 0 0 1 .072-.01c3.928 1.793 8.18 1.793 12.061 0a.07.07 0 0 1 .073.009c.12.099.246.198.373.292a.07.07 0 0 1-.006.117c-.598.35-1.22.644-1.873.891a.07.07 0 0 0-.038.098c.36.698.772 1.362 1.225 1.993a.07.07 0 0 0 .076.028 19.84 19.84 0 0 0 6.002-3.03.08.08 0 0 0 .032-.054c.05-3.572-.802-6.666-2.387-9.385a.06.06 0 0 0-.03-.026ZM8.02 11.96c-1.182 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418Z"/>
+            </svg>
+            Join Our Discord
+          </a>
+
+          <button class="btn btn--primary btn--block" id="joinedBtn" type="button" style="margin-top:14px;">
+            I've joined — continue
+          </button>
+
+          <p class="auth__hint" style="margin-top:18px;font-size:12.5px;color:var(--ink-300);">
+            Already a member of the server? Skip ahead — just click "I've joined".
+          </p>
+        </div>
+
+        <!-- Step 2: Username -->
+        <div class="auth__step" id="stepUsername" hidden>
+          <div class="auth__heading">
+            <h1>What's your Discord username?</h1>
+            <p>We'll look you up in the server and DM you a one-time login code.</p>
+          </div>
+
+          <form id="usernameForm" novalidate>
+            <div class="field">
+              <label class="field__label" for="username">Discord username</label>
+              <input class="field__input" id="username" name="username" type="text" autocomplete="username" placeholder="your_username" required />
+            </div>
+            <button type="submit" class="btn btn--primary btn--block auth__submit" id="usernameSubmit">
+              <span id="usernameSubmitLabel">Send me a code</span>
+            </button>
+          </form>
+
+          <button class="auth__back" id="backToJoin" type="button" style="margin-top:18px;border:none;background:none;cursor:pointer;font-family:inherit;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Back
+          </button>
+        </div>
+
+        <!-- Step 3: Code -->
+        <div class="auth__step" id="stepCode" hidden>
+          <div class="auth__heading">
+            <h1>Check your Discord DMs</h1>
+            <p>We sent a 6-digit code to <strong id="codeUsername">you</strong> on Discord. Enter it below.</p>
+          </div>
+
+          <form id="codeForm" novalidate>
+            <div class="field">
+              <label class="field__label" for="code">Login code</label>
+              <input class="field__input field__input--code" id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" required />
+            </div>
+            <button type="submit" class="btn btn--primary btn--block auth__submit" id="codeSubmit">
+              <span id="codeSubmitLabel">Verify & log in</span>
+            </button>
+          </form>
+
+          <button class="auth__back" id="resendBtn" type="button" style="margin-top:14px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--ink-500);font-size:13px;">
+            Didn't get it? Resend code
+          </button>
+          <button class="auth__back" id="backToUsername" type="button" style="margin-top:6px;border:none;background:none;cursor:pointer;font-family:inherit;font-size:13px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 12H5M11 18l-6-6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Use a different username
+          </button>
+        </div>
+
+        <!-- Step 4: Welcome -->
+        <div class="auth__step auth__welcome" id="stepWelcome" hidden>
+          <div class="auth__welcome-emoji">🍋</div>
+          <img class="auth__welcome-avatar" id="welcomeAvatar" alt="" hidden />
+          <h1 id="welcomeTitle">Welcome!</h1>
+          <p id="welcomeSub">Taking you to your chat…</p>
+          <div class="spinner spinner--lg" aria-hidden="true"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="auth.js"></script>
+  <script src="login.js"></script>
+</body>
+</html>
