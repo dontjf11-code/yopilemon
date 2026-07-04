@@ -1,0 +1,19 @@
+{
+  "name": "yopilemon-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "YopiLemon backend — serves the static site, Discord OAuth2 login with server-membership gating, and a same-origin proxy for the upstream AI endpoint so the API key never reaches the browser.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cookie-session": "^2.1.0",
+    "express": "^4.19.2"
+  }
+}
