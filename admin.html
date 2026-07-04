@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex" />
+  <title>Admin — YopiLemon</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="app.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍋</text></svg>" />
+</head>
+<body class="admin-body">
+  <main class="admin">
+    <!-- Sidebar -->
+    <aside class="admin__sidebar">
+      <div class="admin__head">
+        <a class="brand" href="index.html" aria-label="YopiLemon home">
+          <span class="brand__mark" aria-hidden="true">🍋</span>
+          <span class="brand__name">Yopi<span class="brand__dot">Lemon</span></span>
+        </a>
+        <span class="admin__tag">Admin</span>
+      </div>
+
+      <nav class="admin__nav">
+        <button class="admin__nav-btn is-active" id="navUsers" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Users
+        </button>
+        <button class="admin__nav-btn" id="navConvos" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Conversations
+        </button>
+      </nav>
+
+      <div class="admin__foot">
+        <a href="chat.html" class="admin__link">Back to chat</a>
+        <button class="admin__link" id="adminLogout" type="button">Log out</button>
+      </div>
+    </aside>
+
+    <!-- Main pane -->
+    <section class="admin__main">
+      <header class="admin__topbar">
+        <h1 id="adminTitle">Users</h1>
+        <span class="admin__owner" id="adminOwner" hidden>Signed in as <strong></strong></span>
+      </header>
+
+      <!-- Users panel -->
+      <div class="admin__panel" id="panelUsers">
+        <div class="admin__toolbar">
+          <input class="admin__search" id="userSearch" type="search" placeholder="Search by username…" autocomplete="off" />
+          <button class="admin__refresh" id="refreshUsers" type="button">Refresh</button>
+        </div>
+        <div class="admin__tablewrap">
+          <table class="admin__table">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Discord</th>
+                <th>First seen</th>
+                <th>Last seen</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="usersBody"></tbody>
+          </table>
+        </div>
+        <p class="admin__empty" id="usersEmpty" hidden>No users yet.</p>
+      </div>
+
+      <!-- Conversations panel -->
+      <div class="admin__panel" id="panelConvos" hidden>
+        <div class="admin__toolbar">
+          <select class="admin__select" id="convoUserSelect" aria-label="Filter by user"></select>
+          <button class="admin__refresh" id="refreshConvos" type="button">Refresh</button>
+        </div>
+        <div class="admin__convos" id="convosBody"></div>
+        <p class="admin__empty" id="convosEmpty" hidden>No conversations logged yet. Logs accumulate as users chat.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Ban modal -->
+  <div class="modal" id="banModal" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal__card">
+      <h2 id="banModalTitle">Ban user</h2>
+      <p class="modal__sub">The user will be signed out immediately and blocked from logging back in.</p>
+      <label class="field__label" for="banReason">Reason (optional, shown only in admin view)</label>
+      <input class="field__input" id="banReason" type="text" placeholder="Spam, abuse, etc." />
+      <div class="modal__actions">
+        <button class="btn btn--ghost" id="banCancel" type="button">Cancel</button>
+        <button class="btn btn--primary" id="banConfirm" type="button">Confirm ban</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="auth.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

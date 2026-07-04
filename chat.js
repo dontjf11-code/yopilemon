@@ -85,6 +85,10 @@
       location.href = "login.html";
     });
 
+    // Reveal the topbar Admin link only for the owner account.
+    const adminLink = $("chatAdminLink");
+    if (adminLink) adminLink.hidden = !user.isAdmin;
+
     // Conversation list (most recent first)
     const list = $("convoList");
     list.innerHTML = "";
@@ -404,20 +408,31 @@
     const node = buildMessageNode(aiMsg);
     $("messages").appendChild(node);
     const contentEl = node.querySelector(".msg__content");
-    contentEl.classList.add("msg__cursor");
+    // "Thinking..." affordance until the first token arrives, so the
+    // user knows the model is working and hasn't stalled.
+    contentEl.classList.add("msg__thinking");
+    contentEl.innerHTML = renderThinking();
     scrollToBottom();
 
     setStreaming(true);
     abortCtrl = new AbortController();
+    let firstToken = true;
 
     try {
       const full = await streamCompletion({
         model: currentModel,
+        convoId: c.id,
+        title: c.title,
         messages: c.messages
           .filter((m) => m !== aiMsg)
           .map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content })),
         signal: abortCtrl.signal,
         onDelta: (delta) => {
+          if (firstToken) {
+            firstToken = false;
+            contentEl.classList.remove("msg__thinking");
+            contentEl.classList.add("msg__cursor");
+          }
           aiMsg.content += delta;
           contentEl.innerHTML = renderMarkdown(aiMsg.content);
           scrollToBottom();
@@ -425,13 +440,13 @@
       });
 
       aiMsg.content = full || aiMsg.content;
-      contentEl.classList.remove("msg__cursor");
+      contentEl.classList.remove("msg__cursor", "msg__thinking");
       contentEl.innerHTML = renderMarkdown(aiMsg.content);
       c.updatedAt = Date.now();
       saveConversations();
       renderSidebar();
     } catch (err) {
-      contentEl.classList.remove("msg__cursor");
+      contentEl.classList.remove("msg__cursor", "msg__thinking");
       if (err.name === "AbortError") {
         aiMsg.content += "\n\n_(stopped)_";
       } else {
@@ -463,30 +478,39 @@
 
     const node = [...$("messages").children].pop();
     const contentEl = node.querySelector(".msg__content");
-    contentEl.classList.add("msg__cursor");
+    contentEl.classList.add("msg__thinking");
+    contentEl.innerHTML = renderThinking();
 
     setStreaming(true);
     abortCtrl = new AbortController();
+    let firstToken = true;
     try {
       const full = await streamCompletion({
         model: currentModel,
+        convoId: c.id,
+        title: c.title,
         messages: c.messages
           .filter((m) => m !== aiMsg)
           .map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.content })),
         signal: abortCtrl.signal,
         onDelta: (delta) => {
+          if (firstToken) {
+            firstToken = false;
+            contentEl.classList.remove("msg__thinking");
+            contentEl.classList.add("msg__cursor");
+          }
           aiMsg.content += delta;
           contentEl.innerHTML = renderMarkdown(aiMsg.content);
           scrollToBottom();
         },
       });
       aiMsg.content = full || aiMsg.content;
-      contentEl.classList.remove("msg__cursor");
+      contentEl.classList.remove("msg__cursor", "msg__thinking");
       contentEl.innerHTML = renderMarkdown(aiMsg.content);
       c.updatedAt = Date.now();
       saveConversations();
     } catch (err) {
-      contentEl.classList.remove("msg__cursor");
+      contentEl.classList.remove("msg__cursor", "msg__thinking");
       aiMsg.content += err.name === "AbortError" ? "\n\n_(stopped)_" : `\n\n⚠️ **Error:** ${err.message}`;
       contentEl.innerHTML = renderMarkdown(aiMsg.content);
       saveConversations();
@@ -541,13 +565,13 @@
      The server forwards to the upstream OpenAI-compatible endpoint
      with the secret API key and pipes the SSE stream back to us.
      ============================================================ */
-  async function streamCompletion({ model, messages, signal, onDelta }) {
+  async function streamCompletion({ model, messages, convoId, title, signal, onDelta }) {
     const res = await fetch("/api/chat", {
       method: "POST",
       signal,
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages }),
+      body: JSON.stringify({ model, messages, convoId, title }),
     });
 
     if (!res.ok || !res.body) {
@@ -561,6 +585,10 @@
       if (res.status === 401) {
         // Session expired — bounce to login.
         location.replace("login.html");
+      }
+      if (res.status === 403) {
+        // Banned/suspended — bounce to login with the server's reason.
+        location.replace("login.html?banned=" + encodeURIComponent(detail || "suspended"));
       }
       throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ""}`);
     }
@@ -635,17 +663,78 @@
   function escapeAttr(s) { return escapeHtml(s).replace(/"/g, "&quot;"); }
 
   function renderMarkdown(text) {
+    let html;
     if (window.marked && marked.parse) {
       try {
-        // marked v12: parse inline config; sanitize via DOMPurify if present
-        const html = marked.parse(text, { breaks: true });
-        if (window.DOMPurify) return DOMPurify.sanitize(html);
-        return html;
+        html = marked.parse(text || "", { breaks: true });
       } catch {
         return escapeHtml(text).replace(/\n/g, "<br>");
       }
+    } else {
+      return escapeHtml(text).replace(/\n/g, "<br>");
     }
-    return escapeHtml(text).replace(/\n/g, "<br>");
+    if (window.DOMPurify) html = DOMPurify.sanitize(html);
+    return enhanceCodeBlocks(html);
+  }
+
+  // "Thinking..." affordance shown in the AI bubble before the first
+  // token arrives. Three bouncing dots + a label.
+  function renderThinking() {
+    return `<span class="thinking"><span class="thinking__dots"><i></i><i></i><i></i></span><span class="thinking__label">Thinking…</span></span>`;
+  }
+
+  // Walk the rendered HTML and upgrade <pre><code> blocks: detect
+  // JSON and pretty-print it, add a language tag + copy button.
+  function enhanceCodeBlocks(html) {
+    // Operate on a temporary container so we can use the DOM parser
+    // rather than fragile regex on HTML.
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    const pres = tpl.content.querySelectorAll("pre code");
+    pres.forEach((code) => {
+      const pre = code.parentElement;
+      const langClass = [...(code.className || "").split(/\s+/)].find((c) => c.startsWith("language-"));
+      let lang = langClass ? langClass.replace("language-", "") : "";
+
+      // If the content looks like JSON and isn't already pretty, try
+      // to pretty-print it. Keep the original on parse failure.
+      const raw = code.textContent || "";
+      if (!lang || lang === "json") {
+        const trimmed = raw.trim();
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            code.textContent = JSON.stringify(parsed, null, 2);
+            lang = "json";
+          } catch { /* not valid JSON — leave it */ }
+        }
+      }
+
+      // Wrap the <pre> in a toolbar (lang label + copy button).
+      const wrap = document.createElement("div");
+      wrap.className = "codeblock";
+      const bar = document.createElement("div");
+      bar.className = "codeblock__bar";
+      const label = document.createElement("span");
+      label.className = "codeblock__lang";
+      label.textContent = lang || "code";
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "codeblock__copy";
+      copy.textContent = "Copy";
+      copy.addEventListener("click", () => {
+        copyText(raw).then(() => {
+          copy.textContent = "Copied!";
+          setTimeout(() => (copy.textContent = "Copy"), 1200);
+        });
+      });
+      bar.appendChild(label);
+      bar.appendChild(copy);
+      pre.replaceWith(wrap);
+      wrap.appendChild(bar);
+      wrap.appendChild(pre);
+    });
+    return tpl.innerHTML;
   }
 
   async function copyText(text) {

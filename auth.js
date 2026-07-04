@@ -74,7 +74,13 @@
       const avatar = user.avatar
         ? `<img class="nav__avatar nav__avatar-img" src="${escapeAttr(user.avatar)}" alt="" />`
         : `<span class="nav__avatar" aria-hidden="true">${escapeHtml(initial)}</span>`;
-      html = `<a href="chat.html" class="btn btn--ghost">Chat</a>
+      // Admin button only renders for the owner account (isAdmin is
+      // stamped server-side from ADMIN_USERNAME).
+      const adminBtn = user.isAdmin
+        ? `<a href="admin.html" class="btn btn--ghost nav__admin">Admin</a>`
+        : "";
+      html = `${adminBtn}
+         <a href="chat.html" class="btn btn--ghost">Chat</a>
          <span class="nav__user" title="${escapeAttr(user.username || user.name)}">
            ${avatar}
            <span class="nav__username">${escapeHtml(user.name || user.username)}</span>
@@ -82,7 +88,7 @@
          <button class="btn btn--ghost" id="logoutBtn" type="button">Log out</button>`;
     } else {
       html = `<a href="login.html" class="btn btn--ghost">Sign in</a>
-         <a href="login.html" class="btn btn--primary">Start free</a>`;
+         <a href="login.html?mode=signup" class="btn btn--primary">Start free</a>`;
     }
     slots.forEach((s) => (s.innerHTML = html));
 

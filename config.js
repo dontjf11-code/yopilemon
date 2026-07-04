@@ -30,33 +30,11 @@ window.YOPIL_CONFIG = {
       blurb: "Deep reasoning and long-form writing with a thoughtful tone.",
     },
     {
-      id: "gpt-4o",
-      name: "GPT-4o",
-      maker: "OpenAI",
-      tier: "flagship",
-      blurb: "OpenAI's flagship multimodal model. Great all-around.",
-    },
-    {
-      id: "o1",
-      name: "o1",
-      maker: "OpenAI",
-      tier: "flagship",
-      blurb: "Reasoning-first model that thinks before it answers.",
-      badge: "Reasoning",
-    },
-    {
       id: "glm-5.2",
       name: "GLM 5.2",
       maker: "Zhipu",
       tier: "flagship",
       blurb: "Bilingual powerhouse with strong tool use and reasoning.",
-    },
-    {
-      id: "gemini-2.5-pro",
-      name: "Gemini 2.5 Pro",
-      maker: "Google",
-      tier: "flagship",
-      blurb: "Google's top model with a huge context window.",
     },
 
     // ---- Balanced ----
@@ -82,13 +60,6 @@ window.YOPIL_CONFIG = {
       tier: "balanced",
       blurb: "Reliable general-purpose model with broad language coverage.",
     },
-    {
-      id: "gemini-2.0-flash",
-      name: "Gemini 2.0 Flash",
-      maker: "Google",
-      tier: "balanced",
-      blurb: "Fast, capable, and light on its feet for everyday tasks.",
-    },
 
     // ---- Fast ----
     {
@@ -98,20 +69,6 @@ window.YOPIL_CONFIG = {
       tier: "fast",
       blurb: "Lighter GLM variant tuned for speed and throughput.",
       badge: "Fast",
-    },
-    {
-      id: "gpt-4o-mini",
-      name: "GPT-4o mini",
-      maker: "OpenAI",
-      tier: "fast",
-      blurb: "OpenAI's small, fast, cheap-to-run model. Great for quick tasks.",
-    },
-    {
-      id: "deepseek-chat",
-      name: "DeepSeek V3",
-      maker: "DeepSeek",
-      tier: "fast",
-      blurb: "Fast open-weights model with strong general chat quality.",
     },
 
     // ---- Specialists ----
@@ -123,35 +80,17 @@ window.YOPIL_CONFIG = {
       blurb: "Specialized for code generation, refactors, and debugging.",
       badge: "Code",
     },
-    {
-      id: "deepseek-reasoner",
-      name: "DeepSeek R1",
-      maker: "DeepSeek",
-      tier: "specialist",
-      blurb: "Open reasoning model that shows its work step by step.",
-      badge: "Reasoning",
-    },
-    {
-      id: "grok-3",
-      name: "Grok 3",
-      maker: "xAI",
-      tier: "specialist",
-      blurb: "xAI's model with a witty, direct voice and current knowledge.",
-    },
   ],
 
   // Maker display meta (color + logo initial), shared by the chat
   // picker and the home-page models grid so they stay in sync.
+  // Only makers that appear in `models` above are listed.
   makerMeta: {
     Anthropic: { color: "#D97706", initial: "A" },
-    OpenAI:    { color: "#10A37F", initial: "O" },
-    Google:    { color: "#4285F4", initial: "G" },
     Zhipu:     { color: "#7C3AED", initial: "Z" },
     Moonshot:  { color: "#2563EB", initial: "M" },
     MiniMax:   { color: "#DB2777", initial: "X" },
     Alibaba:   { color: "#EA580C", initial: "Q" },
-    DeepSeek:  { color: "#4D6BFE", initial: "D" },
-    xAI:       { color: "#111827", initial: "x" },
   },
 
   // Default model id used when a user hasn't picked one

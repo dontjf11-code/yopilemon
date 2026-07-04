@@ -17,6 +17,7 @@
    routes. The upstream host and key are never shipped to the client.
    ============================================================ */
 import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
@@ -28,6 +29,17 @@ import {
   sendDM,
   getMember,
 } from "./bot.js";
+import {
+  getUsers,
+  upsertUser,
+  isBanned,
+  banUser,
+  unbanUser,
+  getAllConversations,
+  getConversationsForUser,
+  deleteConversation,
+  appendMessage,
+} from "./store.js";
 
 /* ---- env ---- */
 const REQUIRED = [
@@ -52,7 +64,18 @@ const CONFIG = {
   upstreamKey: process.env.UPSTREAM_API_KEY,
   publicBaseUrl: (process.env.PUBLIC_BASE_URL || "").replace(/\/$/, ""),
   port: parseInt(process.env.PORT || "3000", 10),
+  // Discord username (without @) that owns the admin panel. Override
+  // with ADMIN_USERNAME if you ever change it; defaults to "yopixs".
+  adminUsername: (process.env.ADMIN_USERNAME || "yopixs").trim().toLowerCase(),
 };
+
+/* ---- admin check ----
+   Admin is whoever controls the designated Discord account. We match
+   case-insensitively on the stored username. The flag is attached to
+   the session user so the client can show the Admin button. */
+function isAdminUser(user) {
+  return !!user && String(user.username || "").trim().toLowerCase() === CONFIG.adminUsername;
+}
 
 /* ---- app ---- */
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -207,8 +230,18 @@ app.post("/auth/verify", async (req, res) => {
     const fresh = await getMember(CONFIG.guildId, member.id, CONFIG.botToken);
     const user = toPublicUser(fresh || member);
 
+    // Reject banned users before issuing a session.
+    if (isBanned(user.id)) {
+      console.log("[YopiLemon] /auth/verify rejected banned user:", user.username);
+      return res.status(403).json({ error: "Your account has been suspended. Contact an admin if you think this is a mistake." });
+    }
+
+    // Persist/refresh the known user and stamp the admin flag.
+    upsertUser(user);
+    user.isAdmin = isAdminUser(user);
+
     req.session.user = user;
-    console.log("[YopiLemon] /auth/verify OK — session set for", user.username, "secure?", req.secure, "proto", req.protocol);
+    console.log("[YopiLemon] /auth/verify OK — session set for", user.username, "admin?", user.isAdmin, "secure?", req.secure, "proto", req.protocol);
     return res.json({ ok: true, user });
   } catch (err) {
     console.error("[YopiLemon] verify error:", err.message);
@@ -225,19 +258,77 @@ app.get("/api/me", (req, res) => {
   const hasSession = !!req.session && !!req.session.user;
   console.log("[YopiLemon] /api/me — hasSession:", hasSession, "secure?", req.secure, "cookies?", !!req.headers.cookie);
   if (!hasSession) return res.status(401).json({ error: "Not authenticated" });
-  res.json({ user: req.session.user });
+
+  const user = req.session.user;
+  // Re-check ban on every /api/me so a ban issued mid-session kicks in
+  // on the next page load. Admins can't be banned via the panel.
+  if (isBanned(user.id) && !isAdminUser(user)) {
+    req.session = null;
+    return res.status(403).json({ error: "Your account has been suspended." });
+  }
+  // Keep the admin flag fresh in case ADMIN_USERNAME changed.
+  user.isAdmin = isAdminUser(user);
+  res.json({ user });
 });
 
 /* ============================================================
    Chat proxy — keeps the upstream key + endpoint server-side
    ============================================================ */
+
+// Load the allowed model ids once from the public config so the
+// server and the client picker stay in sync. The file lives in the
+// parent directory (the static root).
+const ALLOWED_MODELS = (() => {
+  try {
+    const raw = fs.readFileSync(path.join(STATIC_ROOT, "config.js"), "utf8");
+    const match = raw.match(/models:\s*\[([\s\S]*?)\n\s*\]/);
+    if (!match) return new Set();
+    const ids = new Set();
+    for (const m of match[1].matchAll(/id:\s*"([^"]+)"/g)) ids.add(m[1]);
+    return ids;
+  } catch {
+    return new Set();
+  }
+})();
+
 app.post("/api/chat", requireUser, async (req, res) => {
-  const { model, messages } = req.body || {};
+  const { model, messages, convoId, title } = req.body || {};
   if (!model || typeof model !== "string") {
     return res.status(400).json({ error: "Missing 'model'." });
   }
-  if (!Array.isArray(messages)) {
+  if (!Array.isArray(messages) || !messages.length) {
     return res.status(400).json({ error: "Missing 'messages' array." });
+  }
+  // Reject models we don't expose. Saves an upstream call and stops
+  // anyone bypassing the picker with an arbitrary id.
+  if (ALLOWED_MODELS.size && !ALLOWED_MODELS.has(model)) {
+    return res.status(400).json({ error: "That model isn't available." });
+  }
+
+  const user = req.session.user;
+  // Admins can't be banned; everyone else is checked here too.
+  if (isBanned(user.id) && !isAdminUser(user)) {
+    req.session = null;
+    return res.status(403).json({ error: "Your account has been suspended." });
+  }
+
+  // Log the user's latest message before streaming. We log only the
+  // final user turn (the last user-role entry) plus the streamed
+  // assistant reply, which is enough for admin oversight without
+  // re-sending the whole history every turn.
+  const lastUser = [...messages].reverse().find((m) => m.role === "user");
+  const logConvoId = String(convoId || `c_${Date.now()}`);
+  if (lastUser && typeof lastUser.content === "string") {
+    try {
+      appendMessage(user.id, logConvoId, {
+        role: "user",
+        content: lastUser.content,
+        title: title || null,
+        model,
+      });
+    } catch (err) {
+      console.error("[YopiLemon] log user msg failed:", err.message);
+    }
   }
 
   let upstream;
@@ -268,26 +359,122 @@ app.post("/api/chat", requireUser, async (req, res) => {
     });
   }
 
-  // Pass the SSE stream straight through to the client unchanged.
+  // Pass the SSE stream to the client AND tee it so we can capture
+  // the assistant's reply for the admin conversation log.
   res.setHeader("Content-Type", upstream.headers.get("content-type") || "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
   res.status(200);
+
   const reader = upstream.body.getReader();
-  const closed = () => {};
+  let aiBuffer = "";          // accumulated assistant text for logging
+  let sseCarry = "";          // partial SSE line across chunks
+  const decoder = new TextDecoder();
+
   (async () => {
     try {
       while (true) {
         const { value, done } = await reader.read();
         if (done) break;
         res.write(value);
+
+        // Parse SSE deltas out of this chunk so we can log the reply.
+        sseCarry += decoder.decode(value, { stream: true });
+        const lines = sseCarry.split("\n");
+        sseCarry = lines.pop(); // keep the last (possibly partial) line
+        for (const line of lines) {
+          const t = line.trim();
+          if (!t.startsWith("data:")) continue;
+          const payload = t.slice(5).trim();
+          if (payload === "[DONE]") continue;
+          try {
+            const json = JSON.parse(payload);
+            const delta = json?.choices?.[0]?.delta?.content || "";
+            if (delta) aiBuffer += delta;
+          } catch {
+            /* partial JSON — wait for more */
+          }
+        }
       }
     } catch (err) {
       // Client disconnected or stream errored — best-effort end.
     } finally {
-      try { res.end(); } catch { closed(); }
+      try { res.end(); } catch { /* ignore */ }
+      // Persist the assistant reply (best-effort; never block on it).
+      if (aiBuffer.trim()) {
+        try {
+          appendMessage(user.id, logConvoId, {
+            role: "ai",
+            content: aiBuffer,
+            model,
+            title: title || null,
+          });
+        } catch (err) {
+          console.error("[YopiLemon] log ai msg failed:", err.message);
+        }
+      }
     }
   })();
+});
+
+/* ============================================================
+   Admin routes — owner only (isAdminUser on the session)
+   ============================================================ */
+function requireAdmin(req, res, next) {
+  const user = req.session && req.session.user;
+  if (!user || !isAdminUser(user)) {
+    return res.status(403).json({ error: "Admin only." });
+  }
+  next();
+}
+
+// List all known users with their ban status + last seen.
+app.get("/api/admin/users", requireAdmin, (req, res) => {
+  const users = getUsers();
+  const list = Object.values(users).sort((a, b) => (b.lastSeen || 0) - (a.lastSeen || 0));
+  res.json({ users: list, admin: req.session.user.username });
+});
+
+// Ban a user by discord id. Body: { id, reason? }.
+app.post("/api/admin/ban", requireAdmin, (req, res) => {
+  const id = String(req.body?.id || "");
+  if (!id) return res.status(400).json({ error: "Missing 'id'." });
+  // Never allow banning the admin account.
+  const target = getUsers()[id];
+  if (target && isAdminUser(target)) {
+    return res.status(400).json({ error: "Can't ban the admin account." });
+  }
+  const ok = banUser(id, String(req.body?.reason || ""));
+  if (!ok) return res.status(404).json({ error: "User not found." });
+  console.log(`[YopiLemon] admin banned ${target?.username || id}`);
+  res.json({ ok: true });
+});
+
+// Unban a user by discord id.
+app.post("/api/admin/unban", requireAdmin, (req, res) => {
+  const id = String(req.body?.id || "");
+  if (!id) return res.status(400).json({ error: "Missing 'id'." });
+  const ok = unbanUser(id);
+  if (!ok) return res.status(404).json({ error: "User not found." });
+  console.log(`[YopiLemon] admin unbanned ${id}`);
+  res.json({ ok: true });
+});
+
+// All conversations, grouped by user id.
+app.get("/api/admin/conversations", requireAdmin, (req, res) => {
+  res.json({ conversations: getAllConversations() });
+});
+
+// Conversations for a single user.
+app.get("/api/admin/conversations/:userId", requireAdmin, (req, res) => {
+  res.json({ conversations: getConversationsForUser(req.params.userId) });
+});
+
+// Delete a specific conversation log.
+app.delete("/api/admin/conversations/:userId/:convoId", requireAdmin, (req, res) => {
+  const ok = deleteConversation(req.params.userId, req.params.convoId);
+  if (!ok) return res.status(404).json({ error: "Conversation not found." });
+  res.json({ ok: true });
 });
 
 /* ============================================================
