@@ -292,7 +292,7 @@ const ALLOWED_MODELS = (() => {
 })();
 
 app.post("/api/chat", requireUser, async (req, res) => {
-  const { model, messages, convoId, title } = req.body || {};
+  const { model, messages, convoId, title, effort, system } = req.body || {};
   if (!model || typeof model !== "string") {
     return res.status(400).json({ error: "Missing 'model'." });
   }
@@ -303,6 +303,37 @@ app.post("/api/chat", requireUser, async (req, res) => {
   // anyone bypassing the picker with an arbitrary id.
   if (ALLOWED_MODELS.size && !ALLOWED_MODELS.has(model)) {
     return res.status(400).json({ error: "That model isn't available." });
+  }
+
+  // Reasoning effort: validate against the values the upstream API
+  // accepts (effortLevel: low/medium/high/xhigh). Defaults to medium.
+  const ALLOWED_EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+  const effortLevel = ALLOWED_EFFORTS.has(effort) ? effort : "medium";
+
+  // System instruction: the client sends the user's custom instruction
+  // (or the default). We inject it as a leading system message so the
+  // model is grounded every turn. If the history already starts with a
+  // system message (it won't, since the client only sends user/assistant
+  // turns), replace it instead of duplicating.
+  const sysContent = typeof system === "string" && system.trim()
+    ? system.trim().slice(0, 4000)
+    : null;
+  const upstreamMessages = [];
+  if (sysContent) {
+    upstreamMessages.push({ role: "system", content: sysContent });
+  }
+  for (const m of messages) {
+    // Skip any client-supplied system messages — only the server's
+    // injected one is trusted.
+    if (m.role === "system") continue;
+    if (typeof m.content !== "string") continue;
+    upstreamMessages.push({ role: m.role, content: m.content });
+  }
+  if (upstreamMessages.length === 0 || upstreamMessages[upstreamMessages.length - 1].role !== "user") {
+    // Need at least one user turn to make a completion.
+    if (upstreamMessages.length === 0) {
+      return res.status(400).json({ error: "Missing a user message." });
+    }
   }
 
   const user = req.session.user;
@@ -339,7 +370,15 @@ app.post("/api/chat", requireUser, async (req, res) => {
         "Content-Type": "application/json",
         Authorization: `Bearer ${CONFIG.upstreamKey}`,
       },
-      body: JSON.stringify({ model, messages, stream: true, temperature: 0.7 }),
+      body: JSON.stringify({
+        model,
+        messages: upstreamMessages,
+        stream: true,
+        temperature: 0.7,
+        // Reasoning effort — field name + values per the upstream
+        // (sh00t.host) docs example: "effortLevel": "xhigh".
+        effortLevel,
+      }),
     });
   } catch (err) {
     console.error("[YopiLemon] upstream fetch error:", err.message);

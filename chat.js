@@ -45,6 +45,14 @@
   let isStreaming = false;
   let abortCtrl = null;
 
+  // Reasoning effort + system instruction (global prefs). The server
+  // injects the system message and sends effort as `effortLevel` to
+  // the upstream API.
+  const EFFORTS = (CFG.reasoningEfforts || []).map((e) => e.value);
+  const EFFORT_LABEL = Object.fromEntries((CFG.reasoningEfforts || []).map((e) => [e.value, e.label]));
+  let currentEffort = EFFORTS.includes(CFG.defaultEffort) ? CFG.defaultEffort : (EFFORTS[0] || "medium");
+  let systemInstruction = CFG.defaultSystemInstruction || "";
+
   /* ---- persistence (keyed by Discord user id) ---- */
   const userKey = () => `${CFG.storage.chats}:${user.id}`;
   const loadConversations = () => {
@@ -62,6 +70,20 @@
     if (saved && MODEL_BY_ID[saved]) currentModel = saved;
   };
   const saveModel = (id) => localStorage.setItem(CFG.storage.model, id);
+
+  /* ---- effort + system preference (global) ---- */
+  const loadEffort = () => {
+    const saved = localStorage.getItem(CFG.storage.effort);
+    if (saved && EFFORTS.includes(saved)) currentEffort = saved;
+  };
+  const saveEffort = (v) => localStorage.setItem(CFG.storage.effort, v);
+  const loadSystem = () => {
+    const saved = localStorage.getItem(CFG.storage.system);
+    // Empty string means "user cleared it" — only fall back to default
+    // when there's nothing stored at all.
+    systemInstruction = saved === null ? (CFG.defaultSystemInstruction || "") : saved;
+  };
+  const saveSystem = (v) => localStorage.setItem(CFG.storage.system, v);
 
   /* ============================================================
      Render: sidebar (conversations + user foot)
@@ -221,6 +243,115 @@
   function closeModelMenu() {
     $("modelpicker").classList.remove("is-open");
     $("modelBtn").setAttribute("aria-expanded", "false");
+  }
+
+  /* ============================================================
+     Settings panel — reasoning effort + system instructions
+     ============================================================ */
+  function renderEffortOptions() {
+    const wrap = $("effortOptions");
+    if (!wrap) return;
+    wrap.innerHTML = "";
+    for (const e of EFFORTS) {
+      const btn = el("button", "effort-opt" + (e === currentEffort ? " is-selected" : ""));
+      btn.type = "button";
+      btn.dataset.effort = e;
+      btn.textContent = EFFORT_LABEL[e] || e;
+      btn.addEventListener("click", () => selectEffort(e));
+      wrap.appendChild(btn);
+    }
+  }
+
+  function selectEffort(e) {
+    if (!EFFORTS.includes(e) || e === currentEffort) return;
+    currentEffort = e;
+    saveEffort(e);
+    renderEffortOptions();
+    updateEffortChip();
+  }
+
+  function updateEffortChip() {
+    const label = $("effortChipLabel");
+    if (label) label.textContent = EFFORT_LABEL[currentEffort] || currentEffort;
+  }
+
+  function renderSystemInput() {
+    const input = $("systemInput");
+    if (!input) return;
+    input.value = systemInstruction;
+    updateSystemCount();
+  }
+
+  function updateSystemCount() {
+    const count = $("systemCount");
+    const input = $("systemInput");
+    if (count && input) {
+      const len = input.value.length;
+      count.textContent = `${len} / 4000`;
+      count.classList.toggle("is-over", len > 4000);
+    }
+  }
+
+  function openSettings() {
+    const panel = $("settingsPanel");
+    if (!panel) return;
+    panel.classList.add("is-open");
+    panel.setAttribute("aria-hidden", "false");
+    renderEffortOptions();
+    renderSystemInput();
+  }
+
+  function closeSettings() {
+    const panel = $("settingsPanel");
+    if (!panel) return;
+    panel.classList.remove("is-open");
+    panel.setAttribute("aria-hidden", "true");
+  }
+
+  function wireSettings() {
+    const settingsBtn = $("settingsBtn");
+    const settingsClose = $("settingsClose");
+    const effortChip = $("effortChip");
+    const systemInput = $("systemInput");
+    const systemReset = $("systemReset");
+
+    if (settingsBtn) settingsBtn.addEventListener("click", openSettings);
+    if (settingsClose) settingsClose.addEventListener("click", closeSettings);
+    if (effortChip) effortChip.addEventListener("click", openSettings);
+
+    if (systemInput) {
+      systemInput.addEventListener("input", () => {
+        updateSystemCount();
+      });
+      // Persist on blur so we don't thrash localStorage mid-typing, and
+      // close the panel so the user sees their chat again.
+      systemInput.addEventListener("blur", () => {
+        const val = systemInput.value.slice(0, 4000);
+        systemInstruction = val;
+        saveSystem(val);
+      });
+    }
+    if (systemReset) {
+      systemReset.addEventListener("click", () => {
+        systemInstruction = CFG.defaultSystemInstruction || "";
+        saveSystem(systemInstruction);
+        renderSystemInput();
+      });
+    }
+
+    // Close on backdrop click.
+    const panel = $("settingsPanel");
+    if (panel) {
+      panel.addEventListener("click", (e) => {
+        if (e.target === panel) closeSettings();
+      });
+    }
+    // Esc closes settings.
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && $("settingsPanel")?.classList.contains("is-open")) {
+        closeSettings();
+      }
+    });
   }
 
   /* ============================================================
@@ -571,7 +702,14 @@
       signal,
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, messages, convoId, title }),
+      body: JSON.stringify({
+        model,
+        messages,
+        convoId,
+        title,
+        effort: currentEffort,
+        system: systemInstruction,
+      }),
     });
 
     if (!res.ok || !res.body) {
@@ -761,10 +899,14 @@
   function init() {
     loadConversations();
     loadModel();
+    loadEffort();
+    loadSystem();
     renderModelButton();
     renderModelMenu();
     renderSidebar();
     renderMessages();
+    updateEffortChip();
+    wireSettings();
 
     // Composer
     const input = $("chatInput");

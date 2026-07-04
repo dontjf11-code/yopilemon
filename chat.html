@@ -17,7 +17,14 @@
     <aside class="chat__sidebar" id="sidebar">
       <div class="chat__sidebar-head">
         <a class="brand" href="index.html" aria-label="YopiLemon home">
-          <span class="brand__mark" aria-hidden="true">🍋</span>
+          <span class="brand__mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <ellipse cx="22" cy="26" rx="16" ry="13" transform="rotate(-28 22 26)" fill="#FBC02D"/>
+              <ellipse cx="22" cy="26" rx="16" ry="13" transform="rotate(-28 22 26)" stroke="#F59E0B" stroke-width="2"/>
+              <path d="M30 10c3-2 7-2 9 0-2 1-3 3-3 5" stroke="#2E7D32" stroke-width="2.5" stroke-linecap="round" fill="#43A047"/>
+              <ellipse cx="17" cy="22" rx="4" ry="2.4" transform="rotate(-28 17 22)" fill="#FFF59D" opacity=".8"/>
+            </svg>
+          </span>
           <span class="brand__name">Yopi<span class="brand__dot">Lemon</span></span>
         </a>
       </div>
@@ -45,19 +52,34 @@
         </button>
         <span class="chat__title" id="chatTitle">New chat</span>
 
-        <!-- Model picker -->
-        <div class="modelpicker" id="modelpicker">
-          <button class="modelpicker__btn" id="modelBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
-            <span class="modelpicker__logo-mini" id="modelLogoMini">✦</span>
-            <span class="modelpicker__btn-text" id="modelBtnText">Claude Fable 5</span>
-            <span class="modelpicker__badge" id="modelBtnBadge" hidden></span>
-            <svg class="modelpicker__chev" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </button>
-          <div class="modelpicker__menu" id="modelMenu" role="listbox"></div>
-        </div>
+        <div class="chat__topbar-actions">
+          <!-- Model picker -->
+          <div class="modelpicker" id="modelpicker">
+            <button class="modelpicker__btn" id="modelBtn" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="modelpicker__logo-mini" id="modelLogoMini">✦</span>
+              <span class="modelpicker__btn-text" id="modelBtnText">Claude Fable 5</span>
+              <span class="modelpicker__badge" id="modelBtnBadge" hidden></span>
+              <svg class="modelpicker__chev" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <div class="modelpicker__menu" id="modelMenu" role="listbox"></div>
+          </div>
 
-        <!-- Admin link (only shown to admins via auth.js) -->
-        <a href="admin.html" class="chat__admin-link btn btn--ghost" id="chatAdminLink" hidden>Admin</a>
+          <!-- Effort chip (opens settings) -->
+          <button class="chat__chip" id="effortChip" type="button" title="Reasoning effort">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <span id="effortChipLabel">Medium</span>
+          </button>
+
+          <!-- Settings -->
+          <button class="chat__icon-btn" id="settingsBtn" type="button" title="Chat settings" aria-label="Chat settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+
+          <!-- Admin link (only shown to admins via chat.js) -->
+          <a href="admin.html" class="chat__icon-btn chat__icon-btn--admin" id="chatAdminLink" hidden title="Admin panel" aria-label="Admin panel">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </a>
+        </div>
       </header>
 
       <!-- Messages -->
@@ -82,6 +104,34 @@
         <p class="chat__composer-hint">YopiLemon can make mistakes. Check important info. 🍋</p>
       </div>
     </section>
+
+    <!-- Settings slide-over -->
+    <div class="settings" id="settingsPanel" aria-hidden="true">
+      <div class="settings__card">
+        <div class="settings__head">
+          <h2>Chat settings</h2>
+          <button class="settings__close" id="settingsClose" type="button" aria-label="Close settings">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <section class="settings__group">
+          <label class="settings__label">Reasoning effort</label>
+          <p class="settings__help">Higher effort thinks longer on hard problems. Lower is faster for simple chats.</p>
+          <div class="effort-options" id="effortOptions"></div>
+        </section>
+
+        <section class="settings__group">
+          <label class="settings__label" for="systemInput">System instructions</label>
+          <p class="settings__help">Tells the assistant how to behave. Applies to every new message.</p>
+          <textarea class="settings__textarea" id="systemInput" rows="6" placeholder="e.g. You are a friendly tutor who explains things simply."></textarea>
+          <div class="settings__row">
+            <button class="btn btn--ghost btn--sm" id="systemReset" type="button">Reset to default</button>
+            <span class="settings__count" id="systemCount">0 / 4000</span>
+          </div>
+        </section>
+      </div>
+    </div>
   </div>
 
   <script src="config.js"></script>
