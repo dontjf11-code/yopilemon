@@ -719,6 +719,40 @@
   40% { transform: translateY(-4px); opacity: 1; }
 }
 
+/* "Reconnecting…" pill — shown inline when a stream retries after a
+   transient 502/503/504/drop. Partial content stays visible above it
+   so the resume feels seamless. */
+.msg__content.is-reconnecting {
+  /* keep the rendered content; just add a faint wash to signal retry */
+}
+.reconnect {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(217,119,6,.10);
+  border: 1px solid rgba(217,119,6,.25);
+  color: var(--lemon-600);
+  font-size: 13px;
+  font-weight: 600;
+}
+.reconnect__dots {
+  display: inline-flex;
+  gap: 3px;
+}
+.reconnect__dots i {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--lemon-500);
+  opacity: .55;
+  animation: think-bounce 1.1s ease-in-out infinite;
+}
+.reconnect__dots i:nth-child(2) { animation-delay: .16s; }
+.reconnect__dots i:nth-child(3) { animation-delay: .32s; }
+.reconnect__label { white-space: nowrap; }
+
 /* Code block with toolbar (lang label + copy button) */
 .msg__content .codeblock {
   margin: 10px 0;

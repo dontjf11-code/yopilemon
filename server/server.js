@@ -127,6 +127,18 @@ function requireUser(req, res, next) {
   res.status(401).json({ error: "Not authenticated" });
 }
 
+/* ---- retry helpers (used by the chat proxy) ---- */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+// Gentle exponential backoff with a jitter, capped at 2s. Keeps the
+// first retry quick (250ms) so a transient hiccup feels instant.
+function backoffMs(attempt) {
+  const base = Math.min(250 * 2 ** (attempt - 1), 2000);
+  const jitter = Math.floor(Math.random() * 120);
+  return base + jitter;
+}
+
 /* ---- helpers for the username/code flow ---- */
 function toPublicUser(member) {
   return {
@@ -306,7 +318,7 @@ app.post("/api/chat", requireUser, async (req, res) => {
   }
 
   // Reasoning effort: validate against the values the upstream API
-  // accepts (effortLevel: low/medium/high/xhigh). Defaults to medium.
+  // accepts (reasoning_effort: low/medium/high/xhigh). Defaults to medium.
   const ALLOWED_EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
   const effortLevel = ALLOWED_EFFORTS.has(effort) ? effort : "medium";
 
@@ -362,39 +374,92 @@ app.post("/api/chat", requireUser, async (req, res) => {
     }
   }
 
-  let upstream;
-  try {
-    upstream = await fetch(`${CONFIG.upstream}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${CONFIG.upstreamKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        messages: upstreamMessages,
-        stream: true,
-        temperature: 0.7,
-        // Reasoning effort — field name + values per the upstream
-        // (sh00t.host) docs example: "effortLevel": "xhigh".
-        effortLevel,
-      }),
-    });
-  } catch (err) {
-    console.error("[YopiLemon] upstream fetch error:", err.message);
-    return res.status(502).json({ error: "Upstream request failed." });
+  // Build the upstream request body once so retries reuse it.
+  const upstreamBody = JSON.stringify({
+    model,
+    messages: upstreamMessages,
+    stream: true,
+    temperature: 0.7,
+    // Reasoning effort — verified against the live API: the field
+    // is `reasoning_effort` (standard OpenAI name), accepting
+    // low/medium/high/xhigh. "Max" in the UI maps to xhigh.
+    reasoning_effort: effortLevel,
+  });
+  const upstreamUrl = `${CONFIG.upstream}/chat/completions`;
+  const upstreamHeaders = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${CONFIG.upstreamKey}`,
+  };
+
+  // Retry the *initial* connection up to 6 times. We only retry before
+  // any bytes have been sent to the client — once we start streaming
+  // we've already committed a 200 + headers, so mid-stream failures
+  // are handled client-side (chat.js resumes with the partial reply).
+  // Retry on: network throw, or HTTP 429/500/502/503/504. A 4xx (bad
+  // request) is returned immediately — retrying it won't help.
+  const MAX_CONNECT_ATTEMPTS = 6;
+  const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+  let upstream = null;
+  let lastStatus = 0;
+  let lastDetail = "";
+  for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt++) {
+    try {
+      upstream = await fetch(upstreamUrl, {
+        method: "POST",
+        headers: upstreamHeaders,
+        body: upstreamBody,
+      });
+    } catch (err) {
+      console.error(`[YopiLemon] upstream fetch error (attempt ${attempt}/${MAX_CONNECT_ATTEMPTS}):`, err.message);
+      lastStatus = 0;
+      lastDetail = err.message;
+      upstream = null;
+      if (attempt < MAX_CONNECT_ATTEMPTS) {
+        await sleep(backoffMs(attempt));
+        continue;
+      }
+      break;
+    }
+
+    if (upstream.ok && upstream.body) {
+      break; // good — start streaming
+    }
+
+    // Non-ok: read the body for the error detail, then decide.
+    try {
+      lastDetail = await upstream.text();
+    } catch {
+      lastDetail = "";
+    }
+    lastStatus = upstream.status;
+    console.error(`[YopiLemon] upstream ${upstream.status} (attempt ${attempt}/${MAX_CONNECT_ATTEMPTS}): ${lastDetail.slice(0, 200)}`);
+
+    if (!RETRYABLE.has(upstream.status) || attempt >= MAX_CONNECT_ATTEMPTS) {
+      // Not retryable (e.g. 400/401/403) or out of attempts.
+      break;
+    }
+    // Drain is already done via .text() above; release the response.
+    try { upstream.body?.cancel?.(); } catch { /* ignore */ }
+    upstream = null;
+    await sleep(backoffMs(attempt));
   }
 
-  if (!upstream.ok || !upstream.body) {
-    let detail = "";
-    try {
-      detail = await upstream.text();
-    } catch {
-      /* ignore */
+  if (!upstream || !upstream.ok || !upstream.body) {
+    // Map a non-retryable client error (400/401/403) through with its
+    // real status so the client can react (e.g. 403 ban). Everything
+    // else becomes a 502.
+    if (lastStatus >= 400 && lastStatus < 500 && lastStatus !== 429) {
+      let msg = `Upstream returned ${lastStatus} ${upstream?.statusText || ""}`.trim();
+      try {
+        const j = JSON.parse(lastDetail);
+        if (j?.error?.message) msg = j.error.message;
+      } catch { /* keep msg */ }
+      return res.status(lastStatus).json({ error: msg });
     }
-    console.error(`[YopiLemon] upstream ${upstream.status}: ${detail.slice(0, 200)}`);
     return res.status(502).json({
-      error: `Upstream returned ${upstream.status} ${upstream.statusText}.`,
+      error: lastStatus
+        ? `Upstream returned ${lastStatus} after ${MAX_CONNECT_ATTEMPTS} attempts.`
+        : "Upstream request failed after retries.",
     });
   }
 

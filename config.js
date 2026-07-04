@@ -120,8 +120,8 @@ window.YOPIL_CONFIG = {
   defaultModel: "claude-fable-5",
 
   // Reasoning effort options exposed in the chat settings panel.
-  // `value` is sent to the upstream API as `effortLevel` (the field
-  // name the sh00t.host API uses; values: low/medium/high/xhigh).
+  // `value` is sent to the upstream API as `reasoning_effort` (the
+  // standard OpenAI field name; values: low/medium/high/xhigh).
   // `label` is what the user sees. "Max" maps to xhigh upstream.
   reasoningEfforts: [
     { value: "low", label: "Low" },

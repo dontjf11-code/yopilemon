@@ -46,8 +46,8 @@
   let abortCtrl = null;
 
   // Reasoning effort + system instruction (global prefs). The server
-  // injects the system message and sends effort as `effortLevel` to
-  // the upstream API.
+  // injects the system message and sends effort as `reasoning_effort`
+  // to the upstream API.
   const EFFORTS = (CFG.reasoningEfforts || []).map((e) => e.value);
   const EFFORT_LABEL = Object.fromEntries((CFG.reasoningEfforts || []).map((e) => [e.value, e.label]));
   let currentEffort = EFFORTS.includes(CFG.defaultEffort) ? CFG.defaultEffort : (EFFORTS[0] || "medium");
@@ -568,6 +568,7 @@
           contentEl.innerHTML = renderMarkdown(aiMsg.content);
           scrollToBottom();
         },
+        onReconnect: makeReconnectHandler(contentEl, () => aiMsg.content),
       });
 
       aiMsg.content = full || aiMsg.content;
@@ -634,6 +635,7 @@
           contentEl.innerHTML = renderMarkdown(aiMsg.content);
           scrollToBottom();
         },
+        onReconnect: makeReconnectHandler(contentEl, () => aiMsg.content),
       });
       aiMsg.content = full || aiMsg.content;
       contentEl.classList.remove("msg__cursor", "msg__thinking");
@@ -695,75 +697,147 @@
      API call — same-origin /api/chat proxy (no key in the browser)
      The server forwards to the upstream OpenAI-compatible endpoint
      with the secret API key and pipes the SSE stream back to us.
+
+     Resumable on transient failures: if the connection drops mid-
+     stream (or the proxy returns a retryable 502/503/504), we retry
+     up to 6 times. On retry we append the partial assistant reply as
+     an `assistant` message so the model continues seamlessly from
+     where it left off instead of starting over. `onReconnect(n)` is
+     called when a retry begins (n = attempt number) and `onReconnect(null)`
+     is called once tokens resume, so the UI can show/clear a
+     "Reconnecting…" affordance.
      ============================================================ */
-  async function streamCompletion({ model, messages, convoId, title, signal, onDelta }) {
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      signal,
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model,
-        messages,
-        convoId,
-        title,
-        effort: currentEffort,
-        system: systemInstruction,
-      }),
-    });
+  const MAX_STREAM_ATTEMPTS = 6;
+  const RETRYABLE_STATUSES = new Set([502, 503, 504, 429]);
 
-    if (!res.ok || !res.body) {
-      let detail = "";
+  async function streamCompletion({ model, messages, convoId, title, signal, onDelta, onReconnect }) {
+    let full = "";           // accumulated assistant text across attempts
+    let attempt = 0;
+
+    while (attempt < MAX_STREAM_ATTEMPTS) {
+      attempt++;
+      // On retry, fold the partial reply into the message history as an
+      // assistant turn so the upstream model continues from here.
+      const msgs = (attempt === 1)
+        ? messages
+        : [...messages, { role: "assistant", content: full }];
+
+      let res;
       try {
-        const errJson = await res.json();
-        detail = errJson?.error || JSON.stringify(errJson);
-      } catch {
-        try { detail = await res.text(); } catch { detail = ""; }
-      }
-      if (res.status === 401) {
-        // Session expired — bounce to login.
-        location.replace("login.html");
-      }
-      if (res.status === 403) {
-        // Banned/suspended — bounce to login with the server's reason.
-        location.replace("login.html?banned=" + encodeURIComponent(detail || "suspended"));
-      }
-      throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ""}`);
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let full = "";
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-
-      // SSE chunks are split by blank lines
-      const lines = buffer.split("\n");
-      buffer = lines.pop(); // keep the last (possibly partial) line
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(":")) continue; // comment/keepalive
-        if (!trimmed.startsWith("data:")) continue;
-        const payload = trimmed.slice(5).trim();
-        if (payload === "[DONE]") return full;
-        try {
-          const json = JSON.parse(payload);
-          const delta = json?.choices?.[0]?.delta?.content || "";
-          if (delta) {
-            full += delta;
-            onDelta(delta);
-          }
-        } catch {
-          // ignore malformed partial JSON
+        res = await fetch("/api/chat", {
+          method: "POST",
+          signal,
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model,
+            messages: msgs,
+            convoId,
+            title,
+            effort: currentEffort,
+            system: systemInstruction,
+          }),
+        });
+      } catch (err) {
+        // Network/abort. Aborts are intentional — don't retry.
+        if (err.name === "AbortError") throw err;
+        if (attempt < MAX_STREAM_ATTEMPTS) {
+          if (onReconnect) onReconnect(attempt);
+          await sleepMs(backoffMsClient(attempt));
+          continue;
         }
+        throw new Error("Upstream request failed after retries.");
+      }
+
+      if (!res.ok || !res.body) {
+        let detail = "";
+        try {
+          const errJson = await res.json();
+          detail = errJson?.error || JSON.stringify(errJson);
+        } catch {
+          try { detail = await res.text(); } catch { detail = ""; }
+        }
+        if (res.status === 401) {
+          location.replace("login.html");
+          throw new Error("Session expired.");
+        }
+        if (res.status === 403) {
+          location.replace("login.html?banned=" + encodeURIComponent(detail || "suspended"));
+          throw new Error("Account suspended.");
+        }
+        // Retryable proxy/gateway errors → retry with resume.
+        if (RETRYABLE_STATUSES.has(res.status) && attempt < MAX_STREAM_ATTEMPTS) {
+          if (onReconnect) onReconnect(attempt);
+          await sleepMs(backoffMsClient(attempt));
+          continue;
+        }
+        throw new Error(`HTTP ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ""}`);
+      }
+
+      // Stream this attempt. If it errors mid-read, we retry (resume).
+      try {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let sawTokenThisAttempt = false;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          const lines = buffer.split("\n");
+          buffer = lines.pop(); // keep the last (possibly partial) line
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith(":")) continue; // comment/keepalive
+            if (!trimmed.startsWith("data:")) continue;
+            const payload = trimmed.slice(5).trim();
+            if (payload === "[DONE]") return full;
+            try {
+              const json = JSON.parse(payload);
+              const delta = json?.choices?.[0]?.delta?.content || "";
+              if (delta) {
+                if (!sawTokenThisAttempt) {
+                  sawTokenThisAttempt = true;
+                  if (onReconnect) onReconnect(null); // tokens resumed
+                }
+                full += delta;
+                onDelta(delta);
+              }
+            } catch {
+              // ignore malformed partial JSON
+            }
+          }
+        }
+        // Clean end of stream — we're done.
+        return full;
+      } catch (err) {
+        if (err.name === "AbortError") throw err;
+        // Mid-stream failure. Retry if we have attempts left, resuming
+        // from `full`. Only show reconnect if we actually had partial
+        // content (otherwise it's just a slow first token).
+        if (attempt < MAX_STREAM_ATTEMPTS) {
+          if (onReconnect) onReconnect(attempt);
+          await sleepMs(backoffMsClient(attempt));
+          continue;
+        }
+        // Out of attempts — return what we have rather than throwing,
+        // so the user keeps the partial reply.
+        return full;
       }
     }
     return full;
+  }
+
+  /* ---- retry timing (client) ---- */
+  function sleepMs(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  function backoffMsClient(attempt) {
+    const base = Math.min(400 * 2 ** (attempt - 1), 3000);
+    return base + Math.floor(Math.random() * 200);
   }
 
   /* ============================================================
@@ -819,6 +893,30 @@
   // token arrives. Three bouncing dots + a label.
   function renderThinking() {
     return `<span class="thinking"><span class="thinking__dots"><i></i><i></i><i></i></span><span class="thinking__label">Thinking…</span></span>`;
+  }
+
+  // Builds an onReconnect callback bound to a content element. When
+  // the stream retries (n = attempt number), it appends a small
+  // "Reconnecting…" pill to the rendered content. When tokens resume
+  // (n = null), it clears the pill. The current content stays visible
+  // the whole time so the user sees a seamless continuation.
+  function makeReconnectHandler(contentEl, getPartial) {
+    return (n) => {
+      if (n === null) {
+        contentEl.classList.remove("is-reconnecting");
+        const pill = contentEl.querySelector(".reconnect");
+        if (pill) pill.remove();
+        contentEl.classList.add("msg__cursor");
+        return;
+      }
+      contentEl.classList.remove("msg__thinking");
+      contentEl.classList.add("is-reconnecting", "msg__cursor");
+      const partial = (getPartial && getPartial()) || "";
+      const base = renderMarkdown(partial);
+      const withPill = `${base}<span class="reconnect"><span class="reconnect__dots"><i></i><i></i><i></i></span><span class="reconnect__label">Reconnecting… (attempt ${n}/${MAX_STREAM_ATTEMPTS})</span></span>`;
+      contentEl.innerHTML = withPill;
+      scrollToBottom();
+    };
   }
 
   // Walk the rendered HTML and upgrade <pre><code> blocks: detect
